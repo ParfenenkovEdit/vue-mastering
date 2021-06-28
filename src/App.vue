@@ -12,6 +12,7 @@
               <input
                 v-model="ticker"
                 @keydown.enter="add"
+                @input="handleChange"
                 type="text"
                 name="wallet"
                 id="wallet"
@@ -27,6 +28,33 @@
                 "
                 placeholder="Например DOGE"
               />
+            </div>
+            <div
+              v-if="inputCoinTips.length"
+              class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
+            >
+              <span
+                v-for="tip in inputCoinTips"
+                :key="tip"
+                @click="add($event, tip)"
+                class="
+                  inline-flex
+                  items-center
+                  px-2
+                  m-1
+                  rounded-md
+                  text-xs
+                  font-medium
+                  bg-gray-300
+                  text-gray-800
+                  cursor-pointer
+                "
+              >
+                {{ tip }}
+              </span>
+            </div>
+            <div class="text-sm text-red-600" v-if="isAdded">
+              Такой тикер уже добавлен
             </div>
           </div>
         </div>
@@ -191,31 +219,81 @@ export default {
       tickers: [],
       sel: null,
       graph: [],
+      coinTips: [],
+      inputCoinTips: [],
+      isAdded: false,
     };
   },
 
+  created() {
+    const tickersData = localStorage.getItem("crypto");
+
+    if (tickersData) {
+      this.tickers = JSON.parse(tickersData);
+      this.tickers.forEach((ticker) => this.subscribeToPudates(ticker.name));
+    }
+  },
+
+  mounted: function () {
+    fetch("https://min-api.cryptocompare.com/data/all/coinlist?summary=true")
+      .then((response) => response.json())
+      .then(({ Data }) => {
+        this.coinTips = Object.keys(Data).map((key) => key.toLowerCase());
+      });
+  },
+
   methods: {
-    add() {
+    add(event, tip) {
+      if (tip) {
+        this.ticker = tip;
+      }
+
+      const candidate = this.tickers.find(
+        (t) => t.name === this.ticker.toUpperCase()
+      );
+      if (candidate) {
+        console.log(candidate);
+        this.isAdded = true;
+        return;
+      }
+
       const currentTicker = {
-        name: this.ticker,
+        name: this.ticker.toUpperCase(),
         price: "-",
       };
 
       this.tickers.push(currentTicker);
+      localStorage.setItem("crypto", JSON.stringify(this.tickers));
+      this.subscribeToPudates(currentTicker.name);
+
+      this.ticker = "";
+      this.inputCoinTips = [];
+
+      if (this.isAdded) {
+        this.isAdded = false;
+      }
+    },
+
+    subscribeToPudates(tickerName) {
       setInterval(async () => {
         const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${currentTicker.name}&tsyms=USD&api_key=f43aee2602b8eea3f4f26871784498cad0780b7069312c83ba8aa3d3c5974912`
+          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=f43aee2602b8eea3f4f26871784498cad0780b7069312c83ba8aa3d3c5974912`
         );
         const data = await f.json();
+        if (data.Response === "Error") {
+          this.tickers = this.tickers.filter(
+            (ticker) => ticker.name !== tickerName
+          );
+          return;
+        }
 
-        this.tickers.find((t) => t.name === currentTicker.name).price =
+        this.tickers.find((t) => t.name === tickerName).price =
           data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
 
-        if (this.sel?.name === currentTicker.name) {
+        if (this.sel?.name === tickerName) {
           this.graph.push(data.USD);
         }
       }, 5000);
-      this.ticker = "";
     },
 
     select(ticker) {
@@ -223,8 +301,26 @@ export default {
       this.graph = [];
     },
 
+    handleChange() {
+      if (this.ticker === "") {
+        this.inputCoinTips = [];
+        return;
+      }
+
+      if (this.isAdded) {
+        this.isAdded = false;
+      }
+
+      const searchTicker = this.ticker.toLowerCase();
+      this.inputCoinTips = this.coinTips
+        .filter((tip) => tip.includes(searchTicker))
+        .slice(0, 4)
+        .map((tip) => tip.toUpperCase());
+    },
+
     handleDelete(tickerToRemove) {
       this.tickers = this.tickers.filter((t) => t !== tickerToRemove);
+      localStorage.setItem("crypto", JSON.stringify(this.tickers));
     },
 
     normalizeGraph() {

@@ -363,7 +363,8 @@ export default {
       .then((response) => response.json())
       .then(({ Data }) => {
         this.coinTips = Object.keys(Data).map((key) => key.toUpperCase());
-      });
+      })
+      .catch((err) => console.log(err));
   },
 
   methods: {
@@ -403,7 +404,7 @@ export default {
     },
 
     formatPrice(price) {
-      if (price === "-") {
+      if (!price || price === "-") {
         return price;
       }
 
@@ -439,6 +440,9 @@ export default {
         ? []
         : this.coinTips
             .filter((tip) => tip.includes(this.ticker.toUpperCase()))
+            .sort(() => {
+              return Math.random() > Math.random() ? 1 : -1;
+            })
             .slice(0, 4);
       if (this.isAdded) {
         this.isAdded = false;

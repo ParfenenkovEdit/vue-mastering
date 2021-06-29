@@ -190,7 +190,7 @@
                 {{ t.name }} - USD
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ t.price }}
+                {{ formatPrice(t.price) }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
@@ -275,6 +275,8 @@
 </template>
 
 <script>
+import { subscribeToTicker, unsubscribeFromTicker } from "./api";
+
 export default {
   name: "App",
 
@@ -304,7 +306,11 @@ export default {
 
     if (tickersData) {
       this.tickers = JSON.parse(tickersData);
-      this.tickers.forEach((ticker) => this.subscribeToPudates(ticker.name));
+      this.tickers.forEach((ticker) => {
+        subscribeToTicker(ticker.name, (price) => {
+          this.updateTicker(ticker.name, price);
+        });
+      });
     }
   },
 
@@ -356,11 +362,19 @@ export default {
     fetch("https://min-api.cryptocompare.com/data/all/coinlist?summary=true")
       .then((response) => response.json())
       .then(({ Data }) => {
-        this.coinTips = Object.keys(Data).map((key) => key.toLowerCase());
+        this.coinTips = Object.keys(Data).map((key) => key.toUpperCase());
       });
   },
 
   methods: {
+    updateTicker(tickerName, price) {
+      const updatedTicker = this.tickers.find((t) => t.name === tickerName);
+      updatedTicker.price = price;
+
+      if (updatedTicker === this.selectedTicker) {
+        this.graph.push(price);
+      }
+    },
     add(event, tip) {
       if (tip) {
         this.ticker = tip;
@@ -380,36 +394,20 @@ export default {
       };
 
       this.tickers = [...this.tickers, currentTicker];
-      this.subscribeToPudates(currentTicker.name);
-
       this.ticker = "";
-      this.inputCoinTips = [];
+      this.filter = "";
 
-      if (this.isAdded) {
-        this.isAdded = false;
-      }
+      subscribeToTicker(currentTicker.name, (price) => {
+        this.updateTicker(currentTicker.name, price);
+      });
     },
 
-    subscribeToPudates(tickerName) {
-      const interval = setInterval(async () => {
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${tickerName}&tsyms=USD&api_key=f43aee2602b8eea3f4f26871784498cad0780b7069312c83ba8aa3d3c5974912`
-        );
-        const data = await f.json();
-        if (data.Response === "Error") {
-          this.handleDelete(this.tickers.find((t) => t.name === tickerName));
-          clearInterval(interval);
-          return;
-        }
-        this.tickers.find((t) => t.name === tickerName).price =
-          data.USD > 1 ? data.USD.toFixed(2) : data.USD.toPrecision(2);
+    formatPrice(price) {
+      if (price === "-") {
+        return price;
+      }
 
-        if (this.selectedTicker?.name === tickerName) {
-          this.graph.push(data.USD);
-        }
-      }, 3000);
-
-      this.tickers.find((t) => t.name === tickerName).interval = interval;
+      return price > 1 ? price.toFixed(2) : price.toPrecision(2);
     },
 
     select(ticker) {
@@ -417,27 +415,17 @@ export default {
     },
 
     handleChange() {
-      if (this.ticker === "") {
-        this.inputCoinTips = [];
-        return;
-      }
-
       if (this.isAdded) {
         this.isAdded = false;
       }
-
-      const searchTicker = this.ticker.toLowerCase();
-      this.inputCoinTips = this.coinTips
-        .filter((tip) => tip.includes(searchTicker))
-        .slice(0, 4)
-        .map((tip) => tip.toUpperCase());
     },
 
     handleDelete(tickerToRemove) {
-      clearInterval(tickerToRemove.interval);
       if (tickerToRemove === this.selectedTicker) {
         this.selectedTicker = null;
       }
+
+      unsubscribeFromTicker(tickerToRemove.name);
       this.tickers = this.tickers.filter((t) => t !== tickerToRemove);
     },
   },
@@ -445,6 +433,16 @@ export default {
   watch: {
     tickers() {
       localStorage.setItem("crypto", JSON.stringify(this.tickers));
+    },
+    ticker() {
+      this.inputCoinTips = !this.ticker
+        ? []
+        : this.coinTips
+            .filter((tip) => tip.includes(this.ticker.toUpperCase()))
+            .slice(0, 4);
+      if (this.isAdded) {
+        this.isAdded = false;
+      }
     },
     selectedTicker() {
       this.graph = [];

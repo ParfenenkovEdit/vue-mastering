@@ -175,6 +175,7 @@
             @click="select(t)"
             :class="{
               'border-4': selectedTicker === t,
+              'bg-red-100': t.price === '-',
             }"
             class="
               bg-white
@@ -234,7 +235,10 @@
         <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
           {{ selectedTicker.name }} - USD
         </h3>
-        <div class="flex items-end border-gray-600 border-b border-L h-64">
+        <div
+          class="flex items-end border-gray-600 border-b border-L h-64"
+          ref="graph"
+        >
           <div
             v-for="(bar, idx) in normalizedGraph"
             :key="idx"
@@ -291,6 +295,7 @@ export default {
       isAdded: false,
       filter: "",
       page: 1,
+      maxGraphPoints: 1,
     };
   },
 
@@ -358,22 +363,47 @@ export default {
     },
   },
 
-  mounted: function () {
+  mounted() {
     fetch("https://min-api.cryptocompare.com/data/all/coinlist?summary=true")
       .then((response) => response.json())
       .then(({ Data }) => {
         this.coinTips = Object.keys(Data).map((key) => key.toUpperCase());
       })
       .catch((err) => console.log(err));
+
+    window.addEventListener("storage", (event) => {
+      this.tickers = JSON.parse(event.newValue);
+    });
+
+    window.addEventListener("resize", this.updateMaxGraphPoints);
+  },
+
+  beforeUnmount() {
+    window.onstorage = null;
+    window.removeEventListener("resize", this.updateMaxGraphPoints);
   },
 
   methods: {
+    updateMaxGraphPoints() {
+      if (!this.selectedTicker) {
+        return;
+      }
+      this.maxGraphPoints = this.$refs.graph.clientWidth / 38;
+    },
     updateTicker(tickerName, price) {
       const updatedTicker = this.tickers.find((t) => t.name === tickerName);
+
       updatedTicker.price = price;
+      this.tickers = [...this.tickers];
 
       if (updatedTicker === this.selectedTicker) {
         this.graph.push(price);
+
+        if (this.graph.length > this.maxGraphPoints) {
+          this.graph = this.graph.slice(
+            this.graph.length - this.maxGraphPoints
+          );
+        }
       }
     },
     add(event, tip) {
@@ -412,6 +442,10 @@ export default {
     },
 
     select(ticker) {
+      if (this.selectedTicker === ticker) {
+        this.selectedTicker = null;
+        return;
+      }
       this.selectedTicker = ticker;
     },
 
